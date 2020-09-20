@@ -20,57 +20,124 @@
 
 // NB: FOR NOW just a, b, @TODO add more input options
 
-// @TODO think about whether we should add if already exists
-fn push_sorted(vec: &mut Vec<usize>, new_int: usize) {
-	match vec.binary_search(&new_int) {
-		Ok(_) => {} // Already in sorted vec @NOTE we want this behavior, right?
-		Err(i) => vec.insert(i, new_int),
-	}
+// NB: why do we need Debug, for PartialEq?
+// And can we remove it in the future to implement our own?
+#[derive(Clone, Debug, PartialEq)]
+struct NFA {
+	inputs: Vec<char>,
+	table: Vec<Vec<Vec<usize>>>,
 }
 
-fn print_nfa(nfa: &[[Vec<usize>; 3]]) {
-	for (i, row) in nfa.iter().enumerate() {
+fn print_nfa(nfa: &NFA) {
+	println!("  {:?}", nfa.inputs);
+	for (i, row) in nfa.table.iter().enumerate() {
 		println!("{} {:?}", i, row);
 	}
 }
 
-fn concat(nfa0: &[[Vec<usize>; 3]], nfa1: &[[Vec<usize>; 3]]) -> Vec<[Vec<usize>; 3]> {
+// impl fmt::Debug for NFA {
+// 	// @TODO too scary and functional, look at this later
+// 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         f.debug_struct("NFA")
+//          .field("x", &self.x)
+//          .field("y", &self.y)
+//          .finish()
+//     }
+// }
+
+fn push_sorted<T>(vec: &mut Vec<T>, new_int: T)
+where
+	T: Ord,
+{
+	match vec.binary_search(&new_int) {
+		// Don't do anything, already in sorted vec @NOTE we want this behavior, right?
+		Ok(_) => {}
+		Err(i) => vec.insert(i, new_int),
+	}
+}
+
+// @NOTE: alters nfa0 and nfa1
+fn join_alphabets(nfa0: &mut NFA, nfa1: &mut NFA) {
+	// let mut joint_inputs = nfa0.inputs.clone();
+
+	// @NOTE could be done better, join alphabets then one loop. But I'm lazy.
+	// Pretty sure to do it that way you'd have to use an iter().enumerate()
+	for chr in nfa1.inputs.iter() {
+		match nfa0.inputs.binary_search(chr) {
+			Ok(_) => {} // Don't need to do anything if already there
+			Err(i) => {
+				nfa0.inputs.insert(i, *chr);
+				for row in nfa0.table.iter_mut() {
+					row.insert(i, vec![]);
+				}
+			}
+		}
+	}
+
+	// Same as above, but nfa0 and nfa1 swapped
+	for chr in nfa0.inputs.iter() {
+		match nfa1.inputs.binary_search(chr) {
+			Ok(_) => {} // Don't need to do anything if already there
+			Err(i) => {
+				nfa1.inputs.insert(i, *chr);
+				for row in nfa1.table.iter_mut() {
+					row.insert(i, vec![]);
+				}
+			}
+		}
+	}
+}
+
+fn concat(nfa0: &NFA, nfa1: &NFA) -> NFA {
 	// NB when working with larger alphabets, update alphabets for each here first
 	// NB THIS DOESNT NEED TO BE OPTIMIZED IT JUST NEEDS TO WORK, optimize DFA
 	// matching at runtime
 
-	let mut res = nfa0.clone().to_vec();
+	// Inefficient but blah. Don't want to mutate params
+	let mut nfa0 = nfa0.clone();
+	let mut nfa1 = nfa1.clone();
+	join_alphabets(&mut nfa0, &mut nfa1);
+
+	let mut res = nfa0.clone();
 
 	// This could be done with one pass but I'm lazy
 
-	for row in nfa1.iter() {
-		res.push((*row).clone());
+	for row in nfa1.table.iter() {
+		res.table.push((*row).clone());
 	}
 
-	for row in res.iter_mut().skip(nfa0.len()) {
+	for row in res.table.iter_mut().skip(nfa0.table.len()) {
 		for state_list in row.iter_mut() {
 			for state in state_list.iter_mut() {
-				*state += nfa0.len();
+				*state += nfa0.table.len();
 			}
 		}
 	}
 
 	// Connect final state of nfa0 to start state of nfa1
 	// res[nfa0.len() - 1][2].push(nfa0.len());
-	push_sorted(&mut res[nfa0.len() - 1][2], nfa0.len());
+	push_sorted(
+		&mut res.table[nfa0.table.len() - 1].last_mut().unwrap(),
+		nfa0.table.len(),
+	);
 
 	res
 }
 
-fn union(nfa0: &[[Vec<usize>; 3]], nfa1: &[[Vec<usize>; 3]]) -> Vec<[Vec<usize>; 3]> {
-	let mut res = nfa0.clone().to_vec();
+fn union(nfa0: &NFA, nfa1: &NFA) -> NFA {
+	// Inefficient but blah. Don't want to mutate params
+	let mut nfa0 = nfa0.clone();
+	let mut nfa1 = nfa1.clone();
+	join_alphabets(&mut nfa0, &mut nfa1);
 
-	for row in nfa1.iter() {
-		res.push((*row).clone());
+	let mut res = nfa0.clone();
+
+	for row in nfa1.table.iter() {
+		res.table.push((*row).clone());
 	}
 
 	// Update references before we insert new node
-	for row in res.iter_mut() {
+	for row in res.table.iter_mut() {
 		for state_list in row.iter_mut() {
 			for state in state_list.iter_mut() {
 				*state += 1;
@@ -79,27 +146,47 @@ fn union(nfa0: &[[Vec<usize>; 3]], nfa1: &[[Vec<usize>; 3]]) -> Vec<[Vec<usize>;
 	}
 
 	// new final node
-	res.push([vec![], vec![], vec![]]);
+	let mut empty_row = Vec::with_capacity(res.inputs.len() + 1);
+	// +1 for epsilon
+	for _ in 0..res.inputs.len() + 1 {
+		empty_row.push(vec![]);
+	}
+	res.table.push(empty_row);
 
 	// update nfa0 and nfa1 final nodes with epsilon moves to final node
-	// NB: res.len() will be idx of final node after next insert
-	let final_idx = res.len();
+	// NB: res.table.len() will be idx of final node after next insert
+	let final_idx = res.table.len();
 	// res[nfa0.len() - 1][2].push(final_idx);
-	push_sorted(&mut res[nfa0.len() - 1][2], final_idx);
+	push_sorted(
+		&mut res.table[nfa0.table.len() - 1].last_mut().unwrap(),
+		final_idx,
+	);
 	// res[nfa0.len() + nfa1.len() - 1][2].push(final_idx);
-	push_sorted(&mut res[nfa0.len() + nfa1.len() - 1][2], final_idx);
+	push_sorted(
+		&mut res.table[nfa0.table.len() + nfa1.table.len() - 1]
+			.last_mut()
+			.unwrap(),
+		final_idx,
+	);
 
 	// node 0 goes to nfa0 and nfa1 start by epsilon
-	res.insert(0, [vec![], vec![], vec![1, nfa0.len() + 1]]);
+	let mut start_row = Vec::with_capacity(res.inputs.len() + 1);
+	for _ in 0..res.inputs.len() {
+		start_row.push(vec![]);
+	}
+	start_row.push(vec![1, nfa0.table.len() + 1]);
+	res.table.insert(0, start_row);
 
 	res
 }
 
-fn star(nfa: &[[Vec<usize>; 3]]) -> Vec<[Vec<usize>; 3]> {
-	let mut res = nfa.clone().to_vec();
+// @TODO think about .unwrap() and edge cases (empty NFA?)
+
+fn star(nfa: &NFA) -> NFA {
+	let mut res = nfa.clone();
 
 	// Update references: there will be 1 insertion before nfa
-	for row in res.iter_mut() {
+	for row in res.table.iter_mut() {
 		for state_list in row.iter_mut() {
 			for state in state_list.iter_mut() {
 				*state += 1;
@@ -108,133 +195,120 @@ fn star(nfa: &[[Vec<usize>; 3]]) -> Vec<[Vec<usize>; 3]> {
 	}
 
 	// new final node
-	res.push([vec![], vec![], vec![]]);
+	let mut empty_row = Vec::with_capacity(res.inputs.len() + 1);
+	// +1 for epsilon
+	for _ in 0..res.inputs.len() + 1 {
+		empty_row.push(vec![]);
+	}
+	res.table.push(empty_row);
 
 	// epsilon move from nfa end to final state
-	// NB: res.len() will be idx of final node after next insert
-	let final_idx = res.len();
-	// res[nfa.len() - 1][2].push(final_idx);
-	push_sorted(&mut res[nfa.len() - 1][2], final_idx);
+	// NB: res.table.len() will be idx of final node after next insert
+	let final_idx = res.table.len();
+	push_sorted(
+		&mut res.table[nfa.table.len() - 1].last_mut().unwrap(),
+		final_idx,
+	);
 
 	// Insert start node with epislon move to nfa start and end
-	res.insert(0, [vec![], vec![], vec![1, final_idx]]);
+	// res.table.insert(0, [vec![], vec![], vec![1, final_idx]]);
+
+	let mut start_row = Vec::with_capacity(res.inputs.len() + 1);
+	for _ in 0..res.inputs.len() {
+		start_row.push(vec![]);
+	}
+	start_row.push(vec![1, final_idx]);
+	res.table.insert(0, start_row);
 
 	// Connect end of nfa to start node
 	// res[nfa.len()][2].push(0);
-	push_sorted(&mut res[nfa.len()][2], 0);
+	push_sorted(&mut res.table[nfa.table.len()].last_mut().unwrap(), 0);
 
 	res
 }
 
-// NB: this should be trivial if always sorted
-// fn check_eq(nfa0: &[[Vec<usize>; 3]], nfa1: &[[Vec<usize>; 3]]) -> bool {
-// 	if nfa0.len() != nfa1.len() {
-// 		return false;
-// 	}
+fn single_char_nfa(c: char) -> NFA {
+	let inputs = vec![c];
+	let mut table = Vec::new();
+	table.push(vec![vec![1], vec![]]);
+	table.push(vec![vec![], vec![]]);
 
-// 	for (row0, row1) in nfa0.iter().zip(nfa1.iter()) {
-// 		if row0.len() != row1.len() {
-// 			return false;
-// 		}
-
-// 		// assumes
-// 	}
-// 	true
-// }
-
-// @TODO tests, use trivial equality for comparing NFAs
+	NFA { inputs, table }
+}
 
 fn main() {
-	// NB: for now, start state is just first state and last state is just final
-	// state
+	let a = single_char_nfa('a');
+	let b = single_char_nfa('b');
+	let c = single_char_nfa('c');
+	let d = single_char_nfa('d');
+	let e = single_char_nfa('e');
+	let f = single_char_nfa('f');
 
-	// a : O 0-> ◎
-	let mut a = Vec::new();
-	a.push([vec![1], vec![], vec![]]);
-	a.push([vec![], vec![], vec![]]);
-
-	let mut b = Vec::new();
-	b.push([vec![], vec![1], vec![]]);
-	b.push([vec![], vec![], vec![]]);
-
-	let mut epsilon = Vec::new();
-	epsilon.push([vec![], vec![], vec![1]]);
-	epsilon.push([vec![], vec![], vec![]]);
-
-	#[rustfmt::skip]
-	assert_eq!(
-		vec![
-			[vec![1], vec![], vec![]],
-			[vec![], vec![], vec![]]
-		],
-		a
-	);
-
-	// println!("Concatenating a and b:");
 	let a_concat_b = concat(&a, &b);
-	// print_nfa(&a_concat_b);
-	#[rustfmt::skip]
+
 	assert_eq!(
 		vec![
-			[vec![1], vec![],vec! []],
-			[vec![], vec![], vec![2]],
-			[vec![], vec![3], vec![]],
-			[vec![], vec![], vec![]],
+			vec![vec![1], vec![], vec![]],
+			vec![vec![], vec![], vec![2]],
+			vec![vec![], vec![3], vec![]],
+			vec![vec![], vec![], vec![]],
 		],
-		a_concat_b
+		a_concat_b.table
 	);
 
-	// println!("Concatenating ab and b:");
-	// print_nfa(&concat(&a_concat_b, &b));
-
-	// println!("=======================");
-	// println!("Unioning a and b:");
 	let a_union_b = union(&a, &b);
-	print_nfa(&a_union_b);
-	#[rustfmt::skip]
+
 	assert_eq!(
 		vec![
-			[vec![], vec![], vec![1, 3]],
-			[vec![2], vec![], vec![]],
-			[vec![], vec![], vec![5]],
-			[vec![], vec![2],vec! []],
-			[vec![], vec![], vec![5]],
-			[vec![], vec![], vec![]],
+			vec![vec![], vec![], vec![1, 3]],
+			vec![vec![2], vec![], vec![]],
+			vec![vec![], vec![], vec![5]],
+			vec![vec![], vec![2], vec![]],
+			vec![vec![], vec![], vec![5]],
+			vec![vec![], vec![], vec![]],
 		],
-		a_union_b
+		a_union_b.table
 	);
 
-	// println!("=======================");
-	// println!("A*:");
 	let a_star = star(&a);
-	// print_nfa(&a_star);
-	#[rustfmt::skip]
+
 	assert_eq!(
 		vec![
-			[vec![], vec![], vec![1, 3]],
-			[vec![2],vec![], vec![]],
-			[vec![], vec![], vec![0, 3]],
-			[vec![], vec![], vec![]],
+			vec![vec![], vec![1, 3]],
+			vec![vec![2], vec![]],
+			vec![vec![], vec![0, 3]],
+			vec![vec![], vec![]],
 		],
-		a_star
+		a_star.table
 	);
 
-	// println!("=======================");
-	// println!("(A|B)*");
-	let nfa = star(&union(&a, &b));
-	// print_nfa(&nfa);
-	#[rustfmt::skip]
+	let a_d = concat(&a, &d);
+	let b_e = concat(&b, &e);
+	let c_f = concat(&c, &f);
+
+	let a_thru_f_concat = concat(&concat(&a_d, &b_e), &c_f);
+
+	// This implicitly tests `join_alphabets`
 	assert_eq!(
-		vec![
-			[vec![], vec![], vec![1, 7]],
-			[vec![], vec![], vec![2, 4]],
-			[vec![3],vec![], vec![]],
-			[vec![], vec![], vec![6]],
-			[vec![], vec![3], vec![]],
-			[vec![], vec![], vec![6]],
-			[vec![], vec![], vec![0, 7]],
-			[vec![], vec![], vec![]],
-		],
-		nfa
+		NFA {
+			inputs: vec!['a', 'b', 'c', 'd', 'e', 'f'],
+			table: vec![
+				vec![vec![1], vec![], vec![], vec![], vec![], vec![], vec![]],
+				vec![vec![], vec![], vec![], vec![], vec![], vec![], vec![2]],
+				vec![vec![], vec![], vec![], vec![3], vec![], vec![], vec![]],
+				vec![vec![], vec![], vec![], vec![], vec![], vec![], vec![4]],
+				vec![vec![], vec![5], vec![], vec![], vec![], vec![], vec![]],
+				vec![vec![], vec![], vec![], vec![], vec![], vec![], vec![6]],
+				vec![vec![], vec![], vec![], vec![], vec![7], vec![], vec![]],
+				vec![vec![], vec![], vec![], vec![], vec![], vec![], vec![8]],
+				vec![vec![], vec![], vec![9], vec![], vec![], vec![], vec![]],
+				vec![vec![], vec![], vec![], vec![], vec![], vec![], vec![10]],
+				vec![vec![], vec![], vec![], vec![], vec![], vec![11], vec![]],
+				vec![vec![], vec![], vec![], vec![], vec![], vec![], vec![]],
+			]
+		},
+		a_thru_f_concat
 	);
+
+	println!("All assertions passed :)");
 }
