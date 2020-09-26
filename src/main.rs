@@ -35,6 +35,56 @@ fn print_nfa(nfa: &NFA) {
 	}
 }
 
+impl NFA {
+	fn epsilon_closure(&self, base_state: usize) -> Vec<usize> {
+		// n = no inputs
+		// let n = self.inputs.len();
+		let e_moves = self.table[base_state].last().unwrap();
+
+		// Base case
+		if *e_moves == vec![] || *e_moves == vec![base_state] {
+			return vec![];
+		}
+
+		let mut res = Vec::with_capacity(self.table.len());
+		res.push(base_state);
+
+		// @TODO would be much more efficient (cf passing of vecs as return vals) with
+		// iteration instead of recursion
+		for &state in e_moves {
+			match res.binary_search(&state) {
+				Ok(_) => {}
+				Err(i) => {
+					res.insert(i, state);
+
+					let e_clos = self.epsilon_closure(state);
+					// Union of e_clos and res
+					// @TODO make more efficient
+
+					for state in e_clos {
+						push_sorted(&mut res, state);
+					}
+				}
+			}
+		}
+
+		res
+	}
+}
+
+struct DFA {
+	inputs: Vec<char>,
+	// @TODO replace Vec<usize> with RC or other multiple-reference pointer value?
+	table: Vec<Vec<usize>>,
+}
+
+fn print_dfa(dfa: &DFA) {
+	println!("{:?}", dfa.inputs);
+	for (i, row) in dfa.table.iter().enumerate() {
+		println!("{} {:?}", i, row);
+	}
+}
+
 // impl fmt::Debug for NFA {
 // 	// @TODO too scary and functional, look at this later
 // 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -181,7 +231,6 @@ fn union(nfa0: &NFA, nfa1: &NFA) -> NFA {
 }
 
 // @TODO think about .unwrap() and edge cases (empty NFA?)
-
 fn star(nfa: &NFA) -> NFA {
 	let mut res = nfa.clone();
 
@@ -236,7 +285,8 @@ fn single_char_nfa(c: char) -> NFA {
 	NFA { inputs, table }
 }
 
-fn main() {
+// @TODO use rust tests
+fn run_nfa_tests() {
 	let a = single_char_nfa('a');
 	let b = single_char_nfa('b');
 	let c = single_char_nfa('c');
@@ -309,6 +359,25 @@ fn main() {
 		},
 		a_thru_f_concat
 	);
+}
 
-	println!("All assertions passed :)");
+fn main() {
+	run_nfa_tests();
+	println!("All NFA tests passed :)");
+
+	let dfa = DFA {
+		inputs: vec!['a', 'b'],
+		table: vec![vec![1, 2], vec![1, 2], vec![1, 2]],
+	};
+
+	// print_dfa(&dfa);
+
+	let a = single_char_nfa('a');
+	let b = single_char_nfa('b');
+
+	let a_union_b_star = star(&union(&a, &b));
+
+	print_nfa(&a_union_b_star);
+
+	println!("{:?}", a_union_b_star.epsilon_closure(0));
 }
