@@ -28,14 +28,15 @@ struct NFA {
 	table: Vec<Vec<Vec<usize>>>,
 }
 
-fn print_nfa(nfa: &NFA) {
-	println!("  {:?}", nfa.inputs);
-	for (i, row) in nfa.table.iter().enumerate() {
-		println!("{} {:?}", i, row);
-	}
-}
-
 impl NFA {
+	// @NOTE why can an impl method not contain a reference to self?
+	fn print(&self) {
+		println!("  {:?}", self.inputs);
+		for (i, row) in self.table.iter().enumerate() {
+			println!("{} {:?}", i, row);
+		}
+	}
+
 	fn epsilon_closure(&self, base_state: usize) -> Vec<usize> {
 		// n = no inputs
 		// let n = self.inputs.len();
@@ -70,6 +71,9 @@ impl NFA {
 
 		res
 	}
+	// fn to_dfa(&self) -> DFA {
+	// 	let mut res = DFA { inputs: vec![], }
+	// }
 }
 
 struct DFA {
@@ -78,10 +82,12 @@ struct DFA {
 	table: Vec<Vec<usize>>,
 }
 
-fn print_dfa(dfa: &DFA) {
-	println!("{:?}", dfa.inputs);
-	for (i, row) in dfa.table.iter().enumerate() {
-		println!("{} {:?}", i, row);
+impl DFA {
+	fn print(&self) {
+		println!("{:?}", self.inputs);
+		for (i, row) in self.table.iter().enumerate() {
+			println!("{} {:?}", i, row);
+		}
 	}
 }
 
@@ -377,7 +383,7 @@ fn main() {
 
 	let a_union_b_star = star(&union(&a, &b));
 
-	print_nfa(&a_union_b_star);
+	a_union_b_star.print();
 
 	println!("{:?}", a_union_b_star.epsilon_closure(0));
 }
