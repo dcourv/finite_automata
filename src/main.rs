@@ -18,7 +18,7 @@
 // NFA from
 // https://www.geeksforgeeks.org/program-implement-nfa-epsilon-move-dfa-conversion/
 
-// NB: FOR NOW just a, b, @TODO add more input options
+// NB: would something like array2d be more efficient than nested vecs?
 
 // NB: why do we need Debug, for PartialEq?
 // And can we remove it in the future to implement our own?
@@ -26,69 +26,6 @@
 struct NFA {
 	inputs: Vec<char>,
 	table: Vec<Vec<Vec<usize>>>,
-}
-
-impl NFA {
-	// @NOTE why can an impl method not contain a reference to self?
-	fn print(&self) {
-		println!("  {:?}", self.inputs);
-		for (i, row) in self.table.iter().enumerate() {
-			println!("{} {:?}", i, row);
-		}
-	}
-
-	fn epsilon_closure(&self, base_state: usize) -> Vec<usize> {
-		// n = no inputs
-		// let n = self.inputs.len();
-		let e_moves = self.table[base_state].last().unwrap();
-
-		// Base case
-		if *e_moves == vec![] || *e_moves == vec![base_state] {
-			return vec![];
-		}
-
-		let mut res = Vec::with_capacity(self.table.len());
-		res.push(base_state);
-
-		// @TODO would be much more efficient (cf passing of vecs as return vals) with
-		// iteration instead of recursion
-		for &state in e_moves {
-			match res.binary_search(&state) {
-				Ok(_) => {}
-				Err(i) => {
-					res.insert(i, state);
-
-					let e_clos = self.epsilon_closure(state);
-					// Union of e_clos and res
-					// @TODO make more efficient
-
-					for state in e_clos {
-						push_sorted(&mut res, state);
-					}
-				}
-			}
-		}
-
-		res
-	}
-	// fn to_dfa(&self) -> DFA {
-	// 	let mut res = DFA { inputs: vec![], }
-	// }
-}
-
-struct DFA {
-	inputs: Vec<char>,
-	// @TODO replace Vec<usize> with RC or other multiple-reference pointer value?
-	table: Vec<Vec<usize>>,
-}
-
-impl DFA {
-	fn print(&self) {
-		println!("{:?}", self.inputs);
-		for (i, row) in self.table.iter().enumerate() {
-			println!("{} {:?}", i, row);
-		}
-	}
 }
 
 // impl fmt::Debug for NFA {
@@ -100,6 +37,148 @@ impl DFA {
 //          .finish()
 //     }
 // }
+
+impl NFA {
+	// @NOTE why can an impl method not contain a reference to self?
+	fn print(&self) {
+		println!("  {:?}", self.inputs);
+		for (i, row) in self.table.iter().enumerate() {
+			println!("{} {:?}", i, row);
+		}
+	}
+
+	fn eps_clos(&self, base_state: usize) -> Vec<usize> {
+		let mut res = Vec::with_capacity(self.table.len());
+		res.push(base_state);
+
+		let e_moves = self.table[base_state].last().unwrap();
+
+		// Base case
+		if *e_moves == vec![] || *e_moves == vec![base_state] {
+			return res;
+		}
+
+		// @NOTE would be much more efficient (mut slices vs passing vecs as return
+		// vals) with iteration instead of recursion
+		for &state in e_moves {
+			match res.binary_search(&state) {
+				Ok(_) => {}
+				Err(i) => {
+					res.insert(i, state);
+
+					let e_clos = self.eps_clos(state);
+
+					// Union of e_clos and res
+					// @NOTE this could be made more efficient by implementing a "merge" routine for
+					// sorted vecs, but size prob never large enough to get any performance gains
+					for state in e_clos {
+						push_sorted(&mut res, state);
+					}
+				}
+			}
+		}
+
+		res
+	}
+
+	// AUXILIARY FUNCTION:
+	// Populates eps_closures with the epsilon closures of i
+	// Returns the indices of inserted epsilon closures
+	// Populates DFA
+	fn eps_clos_from_eps_clos(
+		&self,
+		eps_closures: &mut Vec<Vec<usize>>,
+		dfa: &mut DFA,
+		i: usize,
+	) -> Vec<usize> {
+		let mut res = vec![];
+
+		// I hate rust sometimes -- cf clone
+		// Not bad enough here to cause a real performance impact, but...
+		// Can't push to eps_closures on line 117 because we're iterating over
+		// eps_closures[0]
+		// @TODO see how to do this in unsafe rust?
+		for from_state in eps_closures[i].clone() {
+			for input_idx in 0..self.inputs.len() {
+				let non_eps_moves = &self.table[from_state][input_idx];
+
+				for &to_state in non_eps_moves {
+					let eps_clos = self.eps_clos(to_state);
+
+					let dfa_state: usize;
+
+					// This is inefficient
+					// @OPTIMIZE? if possible? if necessary?
+					// Store these in some sort of sorted way?
+					// if !eps_closures.contains(&eps_clos) {
+					// 	eps_closures.push(eps_clos);
+					// }
+					// @LEARN why is
+					// `match eps_closures.iter().position(|&e| e == eps_clos) {`
+					// not ok (cannot move out of a shared reference)
+					// but
+					// `match eps_closures.iter().position(|e| *e == eps_clos) {`
+					// is?
+					// NB: position returns index of eps_clos in eps_closures
+					match eps_closures.iter().position(|e| *e == eps_clos) {
+						Some(i) => dfa_state = i,
+						None => {
+							eps_closures.push(eps_clos);
+							dfa_state = eps_closures.len() - 1;
+							dfa.table.push(vec![None; dfa.inputs.len()]);
+
+							res.push(dfa_state);
+						}
+					}
+
+					dfa.table[i][input_idx] = Some(dfa_state);
+				}
+			}
+		}
+
+		res
+	}
+
+	fn to_dfa(&self) -> DFA {
+		let mut dfa = DFA {
+			// @LEARN what is the difference between copy() and clone() here?
+			inputs: self.inputs.clone(),
+			table: vec![],
+		};
+
+		dfa.table.push(vec![None; dfa.inputs.len()]);
+
+		let mut eps_closures: Vec<Vec<usize>> = vec![];
+		eps_closures.push(self.eps_clos(0));
+
+		let mut stack = vec![0usize];
+
+		// @NOTE UNTESTED for more complex NFAs
+		while !stack.is_empty() {
+			let new_dfa_states =
+				self.eps_clos_from_eps_clos(&mut eps_closures, &mut dfa, stack.pop().unwrap());
+			stack.extend(&new_dfa_states);
+		}
+
+		dfa
+	}
+}
+
+// @TODO add final states
+struct DFA {
+	inputs: Vec<char>,
+	// @TODO replace Vec<Option<usize>> with RC or other multiple-reference pointer value?
+	table: Vec<Vec<Option<usize>>>,
+}
+
+impl DFA {
+	fn print(&self) {
+		println!("{:?}", self.inputs);
+		for (i, row) in self.table.iter().enumerate() {
+			println!("{} {:?}", i, row);
+		}
+	}
+}
 
 fn push_sorted<T>(vec: &mut Vec<T>, new_int: T)
 where
@@ -171,7 +250,6 @@ fn concat(nfa0: &NFA, nfa1: &NFA) -> NFA {
 	}
 
 	// Connect final state of nfa0 to start state of nfa1
-	// res[nfa0.len() - 1][2].push(nfa0.len());
 	push_sorted(
 		&mut res.table[nfa0.table.len() - 1].last_mut().unwrap(),
 		nfa0.table.len(),
@@ -188,11 +266,20 @@ fn union(nfa0: &NFA, nfa1: &NFA) -> NFA {
 
 	let mut res = nfa0.clone();
 
+	// Update references in nfa1 before we insert
+	for row in nfa1.table.iter_mut() {
+		for state_list in row.iter_mut() {
+			for state in state_list.iter_mut() {
+				*state += nfa0.table.len();
+			}
+		}
+	}
+
 	for row in nfa1.table.iter() {
 		res.table.push((*row).clone());
 	}
 
-	// Update references before we insert new node
+	// Update references before we insert starting node node
 	for row in res.table.iter_mut() {
 		for state_list in row.iter_mut() {
 			for state in state_list.iter_mut() {
@@ -212,12 +299,12 @@ fn union(nfa0: &NFA, nfa1: &NFA) -> NFA {
 	// update nfa0 and nfa1 final nodes with epsilon moves to final node
 	// NB: res.table.len() will be idx of final node after next insert
 	let final_idx = res.table.len();
-	// res[nfa0.len() - 1][2].push(final_idx);
+
 	push_sorted(
 		&mut res.table[nfa0.table.len() - 1].last_mut().unwrap(),
 		final_idx,
 	);
-	// res[nfa0.len() + nfa1.len() - 1][2].push(final_idx);
+
 	push_sorted(
 		&mut res.table[nfa0.table.len() + nfa1.table.len() - 1]
 			.last_mut()
@@ -266,7 +353,6 @@ fn star(nfa: &NFA) -> NFA {
 	);
 
 	// Insert start node with epislon move to nfa start and end
-	// res.table.insert(0, [vec![], vec![], vec![1, final_idx]]);
 
 	let mut start_row = Vec::with_capacity(res.inputs.len() + 1);
 	for _ in 0..res.inputs.len() {
@@ -276,7 +362,6 @@ fn star(nfa: &NFA) -> NFA {
 	res.table.insert(0, start_row);
 
 	// Connect end of nfa to start node
-	// res[nfa.len()][2].push(0);
 	push_sorted(&mut res.table[nfa.table.len()].last_mut().unwrap(), 0);
 
 	res
@@ -319,7 +404,7 @@ fn run_nfa_tests() {
 			vec![vec![], vec![], vec![1, 3]],
 			vec![vec![2], vec![], vec![]],
 			vec![vec![], vec![], vec![5]],
-			vec![vec![], vec![2], vec![]],
+			vec![vec![], vec![4], vec![]],
 			vec![vec![], vec![], vec![5]],
 			vec![vec![], vec![], vec![]],
 		],
@@ -370,20 +455,16 @@ fn run_nfa_tests() {
 fn main() {
 	run_nfa_tests();
 	println!("All NFA tests passed :)");
-
-	let dfa = DFA {
-		inputs: vec!['a', 'b'],
-		table: vec![vec![1, 2], vec![1, 2], vec![1, 2]],
-	};
-
-	// print_dfa(&dfa);
+	println!();
 
 	let a = single_char_nfa('a');
 	let b = single_char_nfa('b');
+	let c = single_char_nfa('c');
 
-	let a_union_b_star = star(&union(&a, &b));
+	let nfa = concat(&star(&union(&a, &b)), &c);
 
-	a_union_b_star.print();
-
-	println!("{:?}", a_union_b_star.epsilon_closure(0));
+	println!("---------------");
+	nfa.print();
+	println!("");
+	nfa.to_dfa().print();
 }
