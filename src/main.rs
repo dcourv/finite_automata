@@ -58,8 +58,8 @@ impl NFA {
 			return res;
 		}
 
-		// @NOTE would be much more efficient (mut slices vs passing vecs as return
-		// vals) with iteration instead of recursion
+		// @NOTE would be much more efficient (mut slices vs passing vecs as
+		// return vals) with iteration instead of recursion
 		for &state in e_moves {
 			match res.binary_search(&state) {
 				Ok(_) => {}
@@ -69,8 +69,9 @@ impl NFA {
 					let e_clos = self.eps_clos(state);
 
 					// Union of e_clos and res
-					// @NOTE this could be made more efficient by implementing a "merge" routine for
-					// sorted vecs, but size prob never large enough to get any performance gains
+					// @NOTE this could be made more efficient by implementing a
+					// "merge" routine for sorted vecs, but size prob never
+					// large enough to get any performance gains
 					for state in e_clos {
 						push_sorted(&mut res, state);
 					}
@@ -82,9 +83,9 @@ impl NFA {
 	}
 
 	// AUXILIARY FUNCTION:
-	// Populates eps_closures with the epsilon closures of i
-	// Returns the indices of inserted epsilon closures
-	// Populates DFA
+	// Populates eps_closures with the epsilon closures of i, and populates DFA
+	// with states corresponding to the new epsilon closures. Returns the
+	// indices of inserted epsilon closures
 	fn eps_clos_from_eps_clos(
 		&self,
 		eps_closures: &mut Vec<Vec<usize>>,
@@ -114,10 +115,10 @@ impl NFA {
 					// 	eps_closures.push(eps_clos);
 					// }
 					// @LEARN why is
-					// `match eps_closures.iter().position(|&e| e == eps_clos) {`
+					// `match eps_closures.iter().position(|&e| e == eps_clos)`
 					// not ok (cannot move out of a shared reference)
 					// but
-					// `match eps_closures.iter().position(|e| *e == eps_clos) {`
+					// `match eps_closures.iter().position(|e| *e == eps_clos)`
 					// is?
 					// NB: position returns index of eps_clos in eps_closures
 					match eps_closures.iter().position(|e| *e == eps_clos) {
@@ -155,8 +156,11 @@ impl NFA {
 
 		// @NOTE UNTESTED for more complex NFAs
 		while !stack.is_empty() {
-			let new_dfa_states =
-				self.eps_clos_from_eps_clos(&mut eps_closures, &mut dfa, stack.pop().unwrap());
+			let new_dfa_states = self.eps_clos_from_eps_clos(
+				&mut eps_closures,
+				&mut dfa,
+				stack.pop().unwrap(),
+			);
 			stack.extend(&new_dfa_states);
 		}
 
@@ -167,7 +171,8 @@ impl NFA {
 // @TODO add final states
 struct DFA {
 	inputs: Vec<char>,
-	// @TODO replace Vec<Option<usize>> with RC or other multiple-reference pointer value?
+	// @TODO replace Vec<Option<usize>> with RC or other multiple-reference
+	// pointer value?
 	table: Vec<Vec<Option<usize>>>,
 }
 
@@ -185,7 +190,8 @@ where
 	T: Ord,
 {
 	match vec.binary_search(&new_int) {
-		// Don't do anything, already in sorted vec @NOTE we want this behavior, right?
+		// Don't do anything, already in sorted vec @NOTE we want this behavior,
+		// right?
 		Ok(_) => {}
 		Err(i) => vec.insert(i, new_int),
 	}
@@ -224,9 +230,9 @@ fn join_alphabets(nfa0: &mut NFA, nfa1: &mut NFA) {
 }
 
 fn concat(nfa0: &NFA, nfa1: &NFA) -> NFA {
-	// NB when working with larger alphabets, update alphabets for each here first
-	// NB THIS DOESNT NEED TO BE OPTIMIZED IT JUST NEEDS TO WORK, optimize DFA
-	// matching at runtime
+	// NB when working with larger alphabets, update alphabets for each here
+	// first NB THIS DOESNT NEED TO BE OPTIMIZED IT JUST NEEDS TO WORK, optimize
+	// DFA matching at runtime
 
 	// Inefficient but blah. Don't want to mutate params
 	let mut nfa0 = nfa0.clone();
