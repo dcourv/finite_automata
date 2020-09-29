@@ -1,3 +1,5 @@
+use std::fmt;
+
 // NFA implementation
 // Hoping that it's easy to translate regex to these
 
@@ -22,30 +24,26 @@
 
 // NB: why do we need Debug, for PartialEq?
 // And can we remove it in the future to implement our own?
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct NFA {
 	inputs: Vec<char>,
 	table: Vec<Vec<Vec<usize>>>,
 }
 
-// impl fmt::Debug for NFA {
-// 	// @TODO too scary and functional, look at this later
-// 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         f.debug_struct("NFA")
-//          .field("x", &self.x)
-//          .field("y", &self.y)
-//          .finish()
-//     }
-// }
+impl fmt::Debug for NFA {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		writeln!(f, "  {:?}", self.inputs)?;
+
+		for (i, row) in self.table.iter().enumerate() {
+			writeln!(f, "{} {:?}", i, row)?;
+		}
+
+		Ok(())
+	}
+}
 
 impl NFA {
 	// @NOTE why can an impl method not contain a reference to self?
-	fn print(&self) {
-		println!("  {:?}", self.inputs);
-		for (i, row) in self.table.iter().enumerate() {
-			println!("{} {:?}", i, row);
-		}
-	}
 
 	fn eps_clos(&self, base_state: usize) -> Vec<usize> {
 		let mut res = Vec::with_capacity(self.table.len());
@@ -177,12 +175,15 @@ struct DFA {
 	table: Vec<Vec<Option<usize>>>,
 }
 
-impl DFA {
-	fn print(&self) {
-		println!("{:?}", self.inputs);
+impl fmt::Debug for DFA {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		writeln!(f, "{:?}", self.inputs)?;
+
 		for (i, row) in self.table.iter().enumerate() {
-			println!("{} {:?}", i, row);
+			writeln!(f, "{} {:?}", i, row)?;
 		}
+
+		Ok(())
 	}
 }
 
@@ -470,8 +471,7 @@ fn main() {
 
 	let nfa = concat(&star(&union(&a, &b)), &c);
 
-	println!("---------------");
-	nfa.print();
-	println!("");
-	nfa.to_dfa().print();
+	println!("{:?}", nfa);
+	println!();
+	println!("{:?}", nfa.to_dfa());
 }
