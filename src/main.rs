@@ -99,11 +99,12 @@ impl NFA {
 		// Can't push to eps_closures on line 117 because we're iterating over
 		// eps_closures[0]
 		// @TODO see how to do this in unsafe rust?
-		for from_state in eps_closures[i].clone() {
+		for &from_state in eps_closures[i].clone().iter() {
 			for input_idx in 0..self.inputs.len() {
-				let non_eps_moves = &self.table[from_state][input_idx];
+				let non_eps_moves_iter =
+					self.table[from_state][input_idx].iter();
 
-				for &to_state in non_eps_moves {
+				for &to_state in non_eps_moves_iter {
 					let eps_clos = self.eps_clos(to_state);
 
 					let dfa_state: usize;
