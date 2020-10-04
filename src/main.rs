@@ -120,10 +120,13 @@ impl NFA {
 					// `match eps_closures.iter().position(|e| *e == eps_clos)`
 					// is?
 					// NB: position returns index of eps_clos in eps_closures
+
+					// NB: don't think I should need to copy eps_clos here, but
+					// rust is dumb and wants to prevent use after move
 					match eps_closures.iter().position(|e| *e == eps_clos) {
 						Some(i) => dfa_state = i,
 						None => {
-							eps_closures.push(eps_clos);
+							eps_closures.push(eps_clos.clone());
 							dfa_state = eps_closures.len() - 1;
 							dfa.table.push(vec![None; dfa.inputs.len()]);
 
@@ -132,6 +135,21 @@ impl NFA {
 					}
 
 					dfa.table[i][input_idx] = Some(dfa_state);
+
+					match eps_clos.last() {
+						Some(&nfa_state) => {
+							let final_nfa_state = self.table.len() - 1;
+							if nfa_state == final_nfa_state {
+								push_sorted(&mut dfa.final_states, dfa_state);
+								// @DEBUG
+								println!(
+									"dfa_state: {:?}, eps_clos: {:?}",
+									dfa_state, eps_clos
+								);
+							}
+						}
+						None => {}
+					}
 				}
 			}
 		}
@@ -143,13 +161,22 @@ impl NFA {
 		let mut dfa = DFA {
 			// @LEARN what is the difference between copy() and clone() here?
 			inputs: self.inputs.clone(),
-			table: vec![],
+			..Default::default()
 		};
 
 		dfa.table.push(vec![None; dfa.inputs.len()]);
 
 		let mut eps_closures: Vec<Vec<usize>> = vec![];
 		eps_closures.push(self.eps_clos(0));
+
+		// final_state code not called for state 0
+		// @TODO cleanup?
+		match eps_closures[0].last() {
+			// @NOTE Written using `push_sorted` so I can change to HashSet more
+			// easily later if necessary
+			Some(_) => push_sorted(&mut dfa.final_states, 0),
+			None => {}
+		}
 
 		let mut stack = vec![0usize];
 
@@ -167,12 +194,46 @@ impl NFA {
 	}
 }
 
-// @TODO add final states
+#[derive(Default)]
 struct DFA {
+	// Sorted
+	// @TODO change to std::collections::HashSet? *TEST AND BENCHMARK*
 	inputs: Vec<char>,
+	// Sorted
+	// @TODO change to std::collections::HashSet? *TEST AND BENCHMARK*
+	final_states: Vec<usize>,
 	// @TODO replace Vec<Option<usize>> with RC or other multiple-reference
 	// pointer value?
 	table: Vec<Vec<Option<usize>>>,
+}
+
+impl DFA {
+	// NB: only matches at the start of the string
+	// NB: only matches the entire string
+	// @TODO return matches on all substrings of input (push index to some vec
+	// every time we have a match)
+	fn mtch(&self, input: &str) -> bool {
+		let mut state = 0;
+		let mut matching = self.final_states.binary_search(&state).is_ok();
+		for chr in input.chars() {
+			// Super inefficient. Need to start using hash sets and hash tables
+			let input_idx = self.inputs.binary_search(&chr);
+
+			match input_idx {
+				Ok(input_idx) => match self.table[state][input_idx] {
+					Some(new_state) => state = new_state,
+					None => return false,
+				},
+				// input not in nfa!
+				// @TODO maybe return error?
+				Err(_) => return false,
+			}
+
+			matching = self.final_states.binary_search(&state).is_ok();
+		}
+
+		matching
+	}
 }
 
 impl fmt::Debug for DFA {
@@ -182,6 +243,8 @@ impl fmt::Debug for DFA {
 		for (i, row) in self.table.iter().enumerate() {
 			writeln!(f, "{} {:?}", i, row)?;
 		}
+
+		write!(f, "final: {:?}", self.final_states)?;
 
 		Ok(())
 	}
@@ -460,6 +523,26 @@ fn run_nfa_tests() {
 	);
 }
 
+fn union_char_range(start_char: char, end_char: char) -> NFA {
+	// @TODO errors?
+	let mut nfa = single_char_nfa(start_char);
+
+	let start_idx = start_char as u8;
+	let end_idx = end_char as u8;
+
+	if start_idx > end_idx {
+		panic!("start_idx must be less than end_idx");
+	}
+
+	for i in start_idx..=end_idx {
+		// @DEBUG
+		println!("Unioning nfa and {}", i as char);
+		nfa = union(&nfa, &single_char_nfa(i as char));
+	}
+
+	nfa
+}
+
 fn main() {
 	run_nfa_tests();
 	println!("All NFA tests passed :)");
@@ -469,9 +552,31 @@ fn main() {
 	let b = single_char_nfa('b');
 	let c = single_char_nfa('c');
 
-	let nfa = concat(&star(&union(&a, &b)), &c);
+	// (a|b)*|c
+	let nfa = union(&star(&union(&a, &b)), &c);
+	// let nfa = union_char_range('a', 'z');
+	// let nfa = union(&nfa, &b);
+	// let nfa = union(&nfa, &union_char_range('a', 'z'));
+
+	let dfa = nfa.to_dfa();
+
+	println!("{:?}", dfa.mtch("c"));
+	println!("{:?}", dfa.mtch("ababab"));
+	println!("{:?}", dfa.mtch("hello shitfucker"));
+	println!("{:?}", dfa.mtch("abacaba"));
+
+	// let chr = 'z';
+
+	// let nfa = union_char_range('a', chr);
+	// let dfa = nfa.to_dfa();
+
+	let nfa = concat(&nfa, &c);
+	let nfa = concat(&nfa, &union_char_range('a', 'z'));
+	let dfa = nfa.to_dfa();
 
 	println!("{:?}", nfa);
 	println!();
-	println!("{:?}", nfa.to_dfa());
+	println!("{:?}", dfa);
+
+	println!("{:?}", dfa.mtch("acb"));
 }
