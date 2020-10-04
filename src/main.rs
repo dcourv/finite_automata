@@ -1,4 +1,5 @@
 use std::fmt;
+use std::time::Instant;
 
 // NFA implementation
 // Hoping that it's easy to translate regex to these
@@ -24,7 +25,7 @@ use std::fmt;
 
 // NB: why do we need Debug, for PartialEq?
 // And can we remove it in the future to implement our own?
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 struct NFA {
 	inputs: Vec<char>,
 	table: Vec<Vec<Vec<usize>>>,
@@ -141,11 +142,6 @@ impl NFA {
 							let final_nfa_state = self.table.len() - 1;
 							if nfa_state == final_nfa_state {
 								push_sorted(&mut dfa.final_states, dfa_state);
-								// @DEBUG
-								println!(
-									"dfa_state: {:?}, eps_clos: {:?}",
-									dfa_state, eps_clos
-								);
 							}
 						}
 						None => {}
@@ -438,6 +434,17 @@ fn star(nfa: &NFA) -> NFA {
 	res
 }
 
+fn plus(nfa: &NFA) -> NFA {
+	concat(&nfa, &star(&nfa))
+}
+
+fn opt(nfa: &NFA) -> NFA {
+	let eps = NFA {
+		..Default::default()
+	};
+	union(&nfa, &eps)
+}
+
 fn single_char_nfa(c: char) -> NFA {
 	let inputs = vec![c];
 	let mut table = Vec::new();
@@ -535,8 +542,6 @@ fn union_char_range(start_char: char, end_char: char) -> NFA {
 	}
 
 	for i in start_idx..=end_idx {
-		// @DEBUG
-		println!("Unioning nfa and {}", i as char);
 		nfa = union(&nfa, &single_char_nfa(i as char));
 	}
 
@@ -548,35 +553,65 @@ fn main() {
 	println!("All NFA tests passed :)");
 	println!();
 
-	let a = single_char_nfa('a');
-	let b = single_char_nfa('b');
-	let c = single_char_nfa('c');
+	// @PROFILING
+	let now = Instant::now();
+
+	// let a = single_char_nfa('a');
+	// let b = single_char_nfa('b');
+	// let c = single_char_nfa('c');
+
+	let az = union_char_range('a', 'z');
+	let AZ = union_char_range('A', 'Z');
+	let aZ = union(&az, &AZ);
+
+	let dig = &union_char_range('0', '9');
 
 	// (a|b)*|c
-	let nfa = union(&star(&union(&a, &b)), &c);
+	// let nfa = union(&star(&union(&a, &b)), &c);
 	// let nfa = union_char_range('a', 'z');
 	// let nfa = union(&nfa, &b);
 	// let nfa = union(&nfa, &union_char_range('a', 'z'));
 
-	let dfa = nfa.to_dfa();
+	// (\d+((E(\+|-)?\d+)|(\.\d+))?)
 
-	println!("{:?}", dfa.mtch("c"));
-	println!("{:?}", dfa.mtch("ababab"));
-	println!("{:?}", dfa.mtch("hello shitfucker"));
-	println!("{:?}", dfa.mtch("abacaba"));
+	let int = plus(dig);
+
+	let E = single_char_nfa('E');
+	let pls = single_char_nfa('+');
+	let min = single_char_nfa('-');
+	let mut exp = concat(&E, &opt(&union(&pls, &min)));
+	exp = concat(&exp, &plus(dig));
+
+	let nfa = concat(&int, &opt(&exp));
+	// @PROFILING
+	let creation_time = Instant::now() - now;
 
 	// let chr = 'z';
 
 	// let nfa = union_char_range('a', chr);
 	// let dfa = nfa.to_dfa();
 
-	let nfa = concat(&nfa, &c);
-	let nfa = concat(&nfa, &union_char_range('a', 'z'));
+	// let nfa = concat(&nfa, &c);
+	// let nfa = concat(&nfa, &union_char_range('a', 'z'));
+
+	// @TODO OPTIMIZE!!! THIS TAKES 100ms which is really bad
+	// @PROFILING
+	let now = Instant::now();
 	let dfa = nfa.to_dfa();
+	let conversion_time = Instant::now() - now;
 
-	println!("{:?}", nfa);
-	println!();
-	println!("{:?}", dfa);
-
-	println!("{:?}", dfa.mtch("acb"));
+	// @PROFILING
+	let now = Instant::now();
+	println!("{:?}", dfa.mtch("10000"));
+	println!("{:?}", dfa.mtch("0238974982734"));
+	println!("{:?}", dfa.mtch("2E23"));
+	println!("{:?}", dfa.mtch("2E-23"));
+	println!("{:?}", dfa.mtch("43E+43"));
+	println!("{:?}", dfa.mtch("43E"));
+	// @PROFILING
+	let match_time = Instant::now() - now;
+	println!(
+		"Creation: {:?} Conversion: {:?}, Matches: {:?}",
+		creation_time, conversion_time, match_time
+	);
 }
