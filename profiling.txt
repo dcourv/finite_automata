@@ -1,0 +1,37 @@
+With crappy ranges:
+
+Debug:
+
+Creation: 79.887862ms Conversion: 67.124111ms, Matches: 74.333µs
+Creation: 78.686946ms Conversion: 65.93749ms, Matches: 59.796µs
+Creation: 82.532476ms Conversion: 66.212978ms, Matches: 62.57µs
+Creation: 78.939311ms Conversion: 67.111751ms, Matches: 57.721µs
+Creation: 81.076828ms Conversion: 67.714148ms, Matches: 59.406µs
+
+Release:
+
+Creation: 4.647819ms Conversion: 5.24339ms, Matches: 20.162µs
+Creation: 4.721255ms Conversion: 5.045165ms, Matches: 17.476µs
+Creation: 4.854608ms Conversion: 5.037625ms, Matches: 21.734µs
+Creation: 4.821202ms Conversion: 5.028417ms, Matches: 21.922µs
+Creation: 4.573699ms Conversion: 5.020791ms, Matches: 18.824µs
+
+Creation of "ranged" NFAs: 62.926817ms
+
+With good ranges:
+
+Debug:
+
+Creation: 1.596617ms Conversion: 861.038µs, Matches: 41.813µs
+Creation: 1.556612ms Conversion: 861.26µs, Matches: 30.808µs
+Creation: 1.559025ms Conversion: 870.596µs, Matches: 30.706µs
+Creation: 1.556375ms Conversion: 861.954µs, Matches: 32.553µs
+Creation: 1.55754ms Conversion: 860.886µs, Matches: 31.023µs
+
+Release:
+
+Creation: 191.152µs Conversion: 109.963µs, Matches: 21.293µs
+Creation: 265.518µs Conversion: 100.869µs, Matches: 12.706µs
+Creation: 191.346µs Conversion: 100.34µs, Matches: 11.125µs
+Creation: 212.687µs Conversion: 111.251µs, Matches: 10.976µs
+Creation: 189.135µs Conversion: 100.463µs, Matches: 10.974µs

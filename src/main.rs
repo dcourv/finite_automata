@@ -1,5 +1,5 @@
 use std::fmt;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 // NFA implementation
 // Hoping that it's easy to translate regex to these
@@ -25,6 +25,12 @@ use std::time::Instant;
 
 // NB: why do we need Debug, for PartialEq?
 // And can we remove it in the future to implement our own?
+
+// @TODO optimization: change 2 dimensional Vec<Vec<T>>s to 1 dimensional Vec<T>
+// @TODO optimization: change as many sorted Vecs to HashSets as possible
+// @TODO optimization: don't create so many useless rows from concat, union, and
+// star operations on NFAs
+
 #[derive(Clone, Default, PartialEq)]
 struct NFA {
 	inputs: Vec<char>,
@@ -192,14 +198,10 @@ impl NFA {
 
 #[derive(Default)]
 struct DFA {
-	// Sorted
-	// @TODO change to std::collections::HashSet? *TEST AND BENCHMARK*
 	inputs: Vec<char>,
-	// Sorted
-	// @TODO change to std::collections::HashSet? *TEST AND BENCHMARK*
 	final_states: Vec<usize>,
 	// @TODO replace Vec<Option<usize>> with RC or other multiple-reference
-	// pointer value?
+	// pointer value? Only if space is an issue, which it doesn't appear to be
 	table: Vec<Vec<Option<usize>>>,
 }
 
@@ -256,6 +258,41 @@ where
 		Ok(_) => {}
 		Err(i) => vec.insert(i, new_int),
 	}
+}
+
+// @TODO use to optimize union function
+fn combine_vecs<T>(vec0: &[T], vec1: &[T]) -> Vec<T>
+where
+	T: Ord,
+	T: Clone,
+{
+	let mut res = Vec::with_capacity(std::cmp::max(vec0.len(), vec1.len()));
+	// NB: this could be done more efficiently with a merge subroutine like in
+	// mergesort
+	// @TODO implement?
+	for val0 in vec0.iter() {
+		res.push(val0.clone());
+	}
+	for val1 in vec1.iter() {
+		push_sorted(&mut res, val1.clone());
+	}
+	res
+}
+
+// @TODO use to optimize union function
+fn combine_rows<T>(row0: &[Vec<T>], row1: &[Vec<T>]) -> Vec<Vec<T>>
+where
+	T: Ord,
+	T: Clone,
+{
+	let mut res = Vec::with_capacity(row0.len());
+
+	// NOTE: if row0, row1 not equal length, silently fails
+	for (v0, v1) in row0.iter().zip(row1.iter()) {
+		res.push(combine_vecs(v0, v1));
+	}
+
+	res
 }
 
 // @NOTE: alters nfa0 and nfa1
@@ -531,85 +568,78 @@ fn run_nfa_tests() {
 }
 
 fn union_char_range(start_char: char, end_char: char) -> NFA {
-	// @TODO errors?
-	let mut nfa = single_char_nfa(start_char);
+	let mut nfa = NFA {
+		inputs: (start_char..=end_char).collect::<Vec<char>>(),
+		table: Vec::with_capacity(2),
+	};
 
-	let start_idx = start_char as u8;
-	let end_idx = end_char as u8;
+	let num_chars = end_char as usize - start_char as usize + 1;
 
-	if start_idx > end_idx {
-		panic!("start_idx must be less than end_idx");
+	nfa.table.push(Vec::with_capacity(num_chars));
+	nfa.table.push(Vec::with_capacity(num_chars));
+
+	// Excludes epsilon column
+	for _ in 0..num_chars {
+		nfa.table.first_mut().unwrap().push(vec![1]);
+		nfa.table.last_mut().unwrap().push(vec![]);
 	}
-
-	for i in start_idx..=end_idx {
-		nfa = union(&nfa, &single_char_nfa(i as char));
-	}
+	// Epsilon column
+	nfa.table.first_mut().unwrap().push(vec![]);
+	nfa.table.last_mut().unwrap().push(vec![]);
 
 	nfa
+}
+
+// @TODO make proper tests
+fn test_dfa_conversion() -> (Duration, Duration, Duration) {
+	// CREATION
+	// ---------------------------------------------------------
+	let now = Instant::now();
+
+	let dig = &union_char_range('0', '9');
+
+	// Make regex: (\d+((E(\+|-)?\d+)|(\.\d+))?)
+
+	let int = plus(dig);
+
+	let e = single_char_nfa('E');
+	let pls = single_char_nfa('+');
+	let min = single_char_nfa('-');
+	let mut exp = concat(&e, &opt(&union(&pls, &min)));
+	exp = concat(&exp, &plus(dig));
+
+	let num_lit_nfa = concat(&int, &opt(&exp));
+
+	let creation_time = Instant::now() - now;
+
+	// CONVERSION
+	// ---------------------------------------------------------
+
+	let now = Instant::now();
+	let num_lit_dfa = num_lit_nfa.to_dfa();
+	let conversion_time = Instant::now() - now;
+
+	// MATCHING
+	// ---------------------------------------------------------
+
+	let now = Instant::now();
+	assert!(num_lit_dfa.mtch("10000"));
+	assert!(num_lit_dfa.mtch("0238974982734"));
+	assert!(num_lit_dfa.mtch("2E23"));
+	assert!(num_lit_dfa.mtch("2E-23"));
+	assert!(num_lit_dfa.mtch("43E+43"));
+	assert!(!num_lit_dfa.mtch("43E"));
+	let match_time = Instant::now() - now;
+
+	(creation_time, conversion_time, match_time)
 }
 
 fn main() {
 	run_nfa_tests();
 	println!("All NFA tests passed :)");
-	println!();
 
-	// @PROFILING
-	let now = Instant::now();
-
-	// let a = single_char_nfa('a');
-	// let b = single_char_nfa('b');
-	// let c = single_char_nfa('c');
-
-	let az = union_char_range('a', 'z');
-	let AZ = union_char_range('A', 'Z');
-	let aZ = union(&az, &AZ);
-
-	let dig = &union_char_range('0', '9');
-
-	// (a|b)*|c
-	// let nfa = union(&star(&union(&a, &b)), &c);
-	// let nfa = union_char_range('a', 'z');
-	// let nfa = union(&nfa, &b);
-	// let nfa = union(&nfa, &union_char_range('a', 'z'));
-
-	// (\d+((E(\+|-)?\d+)|(\.\d+))?)
-
-	let int = plus(dig);
-
-	let E = single_char_nfa('E');
-	let pls = single_char_nfa('+');
-	let min = single_char_nfa('-');
-	let mut exp = concat(&E, &opt(&union(&pls, &min)));
-	exp = concat(&exp, &plus(dig));
-
-	let nfa = concat(&int, &opt(&exp));
-	// @PROFILING
-	let creation_time = Instant::now() - now;
-
-	// let chr = 'z';
-
-	// let nfa = union_char_range('a', chr);
-	// let dfa = nfa.to_dfa();
-
-	// let nfa = concat(&nfa, &c);
-	// let nfa = concat(&nfa, &union_char_range('a', 'z'));
-
-	// @TODO OPTIMIZE!!! THIS TAKES 100ms which is really bad
-	// @PROFILING
-	let now = Instant::now();
-	let dfa = nfa.to_dfa();
-	let conversion_time = Instant::now() - now;
-
-	// @PROFILING
-	let now = Instant::now();
-	println!("{:?}", dfa.mtch("10000"));
-	println!("{:?}", dfa.mtch("0238974982734"));
-	println!("{:?}", dfa.mtch("2E23"));
-	println!("{:?}", dfa.mtch("2E-23"));
-	println!("{:?}", dfa.mtch("43E+43"));
-	println!("{:?}", dfa.mtch("43E"));
-	// @PROFILING
-	let match_time = Instant::now() - now;
+	println!("Number literal nfa:");
+	let (creation_time, conversion_time, match_time) = test_dfa_conversion();
 	println!(
 		"Creation: {:?} Conversion: {:?}, Matches: {:?}",
 		creation_time, conversion_time, match_time
