@@ -475,6 +475,7 @@ fn plus(nfa: &NFA) -> NFA {
 	concat(&nfa, &star(&nfa))
 }
 
+// @TODO write in place?
 fn opt(nfa: &NFA) -> NFA {
 	let eps = NFA {
 		..Default::default()
@@ -634,14 +635,52 @@ fn test_dfa_conversion() -> (Duration, Duration, Duration) {
 	(creation_time, conversion_time, match_time)
 }
 
+fn test_evil_regex() -> (Duration, Duration, Duration) {
+	// NB: "evil" regex for nfa->dfa conversion step?
+	// This is pretty ridiculous tho and would most likely never be used in
+	// production
+	// @TODO ascertain whether the performance of this conversion be improved by
+	// dejankifying star/concat functions? (Getting rid of unnecessary rows)
+	/*let evil_nfa = plus(&plus(&plus(&plus(&plus(&plus(&plus(&plus(
+		&plus(&plus(&x)),
+	))))))));*/
+
+	let now = Instant::now();
+	let ab = concat(&single_char_nfa('a'), &single_char_nfa('b'));
+	let evil_nfa = star(&(plus(&ab)));
+	let evil_creation_time = Instant::now() - now;
+
+	let now = Instant::now();
+	let evil_dfa = evil_nfa.to_dfa();
+	let evil_conversion_time = Instant::now() - now;
+
+	let now = Instant::now();
+	assert!(!evil_dfa.mtch("ababababababababababababababababababababababababa"));
+	let evil_match_time = Instant::now() - now;
+
+	(evil_creation_time, evil_conversion_time, evil_match_time)
+}
+
 fn main() {
 	run_nfa_tests();
 	println!("All NFA tests passed :)");
+	println!();
 
-	println!("Number literal nfa:");
+	println!("Testing number literal nfa conversion and matching");
+	// println!("--------------------------------------------------");
 	let (creation_time, conversion_time, match_time) = test_dfa_conversion();
 	println!(
 		"Creation: {:?} Conversion: {:?}, Matches: {:?}",
 		creation_time, conversion_time, match_time
+	);
+	println!("");
+
+	println!("Testing evil regex");
+	// println!("------------------");
+	let (evil_creation_time, evil_conversion_time, evil_match_time) =
+		test_evil_regex();
+	println!(
+		"Evil creation: {:?}, conversion: {:?}, match: {:?}",
+		evil_creation_time, evil_conversion_time, evil_match_time
 	);
 }
