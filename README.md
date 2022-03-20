@@ -1,0 +1,1 @@
+Simple finite automata library in Rust. Procedures for creating NFAs using high-level operations (union, \*, +, epsilon-closure), NFA to DFA conversion, matching. Matches certain patterns far more efficiently than backtracking regex libraries.
